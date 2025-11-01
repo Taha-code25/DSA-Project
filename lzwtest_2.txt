@@ -1,0 +1,1258 @@
+import tkinter as tk
+from abc import ABC, abstractmethod
+from tkinter import messagebox, Toplevel, PhotoImage, Label
+import os
+import csv
+from datetime import datetime
+import tkinter.ttk as ttk
+from PIL import Image, ImageTk
+
+current_user = None
+#-------------------User Dashboard Functions--------------------
+def view_available_cars():
+    cars = load_cars_from_csv('cars.csv')
+
+    # Create a new window for viewing cars
+    cars_win = tk.Toplevel(r) 
+    cars_win.title("Available Cars")
+    screen_width = cars_win.winfo_screenwidth()
+    screen_height = cars_win.winfo_screenheight()
+    cars_win.geometry(f"{screen_width}x{screen_height}")
+
+    car_img = Image.open("C:\\Users\\Rehan\\Desktop\\frpg.png")
+    car_img = car_img.resize((350, 250))
+    car_photo = ImageTk.PhotoImage(car_img)
+    cars_win.car_photo = car_photo  # keep reference
+    img_frame = tk.Frame(cars_win, bg='black')
+    img_frame.pack(pady=10)
+    tk.Label(img_frame, image=car_photo, bg='black').pack()
+
+    # Create a listbox to display available cars
+    available_cars_listbox = tk.Listbox(cars_win,font=('Helvetica',25), width=50, height=10)
+    available_cars_listbox.pack(pady=20)
+
+    # Add available cars to the listbox
+    for car in cars:
+        if car.is_available:  # Only show available cars
+            available_cars_listbox.insert(tk.END, f"{car.brand} {car.model} - Seating Capacity: {car.seating_capacity} - Price/day: Rs.{car.price_per_day}")
+
+    # If no cars are available, show a message
+    if not any(car.is_available for car in cars):
+        messagebox.showinfo("No Available Cars", "No cars are available at the moment.")
+
+    info = [
+        ("📞", "021-234-6829"),
+        ("🌐", "www.onlinecarrentalhub.com"),
+        ("📍", "AT Street Main Road,Karachi")
+    ]
+    footer_frame = tk.Frame(cars_win, bg='black')
+    footer_frame.pack(side='bottom', pady=20)
+    for icon, text in info:
+        tk.Label(footer_frame, text=f"{icon}  {text}", font=("Helvetica", 9), fg="white", bg="black").pack(anchor="w")
+
+    cars_win.configure(bg='Black')
+    
+def rent_car():
+    cars = load_cars_from_csv('cars.csv')
+    rental=load_rentals('rental_history.csv',users,cars)
+    available_cars = [car for car in cars if car.is_available]
+    if not available_cars:
+        messagebox.showinfo("No Cars", "No cars available for rent.")
+        return
+
+    rent_win = tk.Toplevel(r)
+    rent_win.title("Rent a Car")
+    screen_width = rent_win.winfo_screenwidth()
+    screen_height = rent_win.winfo_screenheight()
+    rent_win.geometry(f"{screen_width}x{screen_height}")
+
+    car_img = Image.open("C:\\Users\\Rehan\\Desktop\\frpg.png")
+    car_img = car_img.resize((350, 250))
+    car_photo = ImageTk.PhotoImage(car_img)
+    rent_win.car_photo = car_photo  # keep reference
+    img_frame = tk.Frame(rent_win, bg='black')
+    img_frame.pack(pady=10)
+    tk.Label(img_frame, image=car_photo, bg='black').pack()
+
+    tk.Label(rent_win,font=("Helvetica", 12),width=20, text="🚗🔽Select a Car:").pack(pady=10)
+    car_var = tk.StringVar(rent_win)
+    car_options = [f"{car.car_id} - {car.brand} {car.model} -{car.seating_capacity} -(Rs.{car.price_per_day}/day)" for car in available_cars]
+    car_menu = tk.OptionMenu(rent_win, car_var, *car_options)
+    car_menu.config(font=("Helvetica", 12))
+    car_menu["menu"].config(font=("Helvetica", 12))  # Font for dropdown items
+    car_menu.pack(pady=10)
+
+    tk.Label(rent_win, text="📅Start Date (YYYY-MM-DD):",font=("Helvetica", 12),width=20).pack(pady=10)
+    start_date_entry = tk.Entry(rent_win,font=("Helvetica", 12),width=20)
+    start_date_entry.pack(pady=10)
+
+    tk.Label(rent_win, text="📅End Date (YYYY-MM-DD):",font=("Helvetica", 12),width=20).pack(pady=10)
+    end_date_entry = tk.Entry(rent_win,font=("Helvetica", 12),width=20)
+    end_date_entry.pack(pady=10)
+
+    def confirm_rent():
+        global current_user
+        selected = car_var.get()
+        if not selected:
+            messagebox.showerror("Selection Error", "Please select a car.")
+            return
+
+        try:
+            start_date = datetime.strptime(start_date_entry.get(), "%Y-%m-%d").date()
+            end_date = datetime.strptime(end_date_entry.get(), "%Y-%m-%d").date()
+        except ValueError:
+            messagebox.showerror("Date Error", "Invalid date format.")
+            return
+
+        if start_date > end_date:
+            messagebox.showerror("Date Error", "End date must be after start date.")
+            return
+
+        selected_id = selected.split(" - ")[0]
+        car = next((c for c in available_cars if str(c.car_id) == selected_id), None)
+
+        if car is None:
+            messagebox.showerror("Error", "Car not found.")
+            return
+
+        success = current_user.rent_car(car, start_date, end_date)
+        if success:
+            save_cars_to_csv(cars, 'cars.csv')  # update car availability
+            save_users(users, 'users.csv')  # update user balance if needed
+            save_rental(current_user.current_rental, 'rental_history.csv')
+            messagebox.showinfo("Success", f"You have successfully rented {car.model}.")
+            rent_win.destroy()
+        else:
+            messagebox.showerror("Failed", "Unable to rent the car. Check balance or existing rental.")
+
+    rent_button = tk.Button(rent_win, text="🔑Rent Car",font=("Helvetica", 14),width=20 ,command=confirm_rent)
+    rent_button.pack(pady=20)
+
+    info = [
+        ("📞", "021-234-6829"),
+        ("🌐", "www.onlinecarrentalhub.com"),
+        ("📍", "AT Street Main Road,Karachi")
+    ]
+    footer_frame = tk.Frame(rent_win, bg='black')
+    footer_frame.pack(side='bottom', pady=20)
+    for icon, text in info:
+        tk.Label(footer_frame, text=f"{icon}  {text}", font=("Helvetica", 12), fg="white", bg="black").pack(anchor="w")
+
+    rent_win.configure(bg='Black')
+
+def view_rental_history(user):
+        history_win = Toplevel()
+        history_win.title("Rental History")
+        screen_width = history_win.winfo_screenwidth()
+        screen_height = history_win.winfo_screenheight()
+        history_win.geometry(f"{screen_width}x{screen_height}")
+        history_win.configure(bg='Black')
+        car_img = Image.open("C:\\Users\\Rehan\\Desktop\\frpg.png")
+        car_img = car_img.resize((350, 250))
+        car_photo = ImageTk.PhotoImage(car_img)
+        history_win.car_photo = car_photo  # keep reference
+        img_frame = tk.Frame(history_win, bg='black')
+        img_frame.pack(pady=10)
+        tk.Label(img_frame, image=car_photo, bg='black').pack()
+
+        matching_rentals = []
+
+        # Read rental_history.csv and match username
+        if os.path.exists("rental_history.csv"):
+            with open("rental_history.csv", "r") as file:
+                reader = csv.DictReader(file)
+                for row in reader:
+                    if row['username'].strip().lower() == user.username.strip().lower():
+                        matching_rentals.append(row)
+
+        if not matching_rentals:
+            tk.Label(history_win, text="No rental history found.", font=("Segoe UI", 12), bg='#B22222',
+                     fg='white').pack(pady=20)
+        else:
+            tk.Label(history_win, text="Rental History", font=("Segoe UI", 14, "bold"), bg='#B22222', fg='white').pack(
+                pady=10)
+
+            history_text = tk.Text(history_win, wrap='word', font=("Segoe UI", 11), width=60, height=20)
+            history_text.pack(padx=10, pady=10)
+
+            for rental in matching_rentals:
+                history_text.insert(tk.END,
+                                    f"Car ID: {rental['car_id']}\n"
+                                    f"Car Model: {rental['car_model']}\n"
+                                    f"From: {rental['start_date']}\n"
+                                    f"To: {rental['end_date']}\n"
+                                    f"Cost: Rs.{rental['cost']}\n\n"
+                                    )
+
+            history_text.config(state='disabled')  # Make read-only
+
+        info = [
+            ("📞", "021-234-6829"),
+            ("🌐", "www.onlinecarrentalhub.com"),
+            ("📍", "AT Street Main Road,Karachi")
+        ]
+        footer_frame = tk.Frame(history_win, bg='black')
+        footer_frame.pack(side='bottom', pady=20)
+        for icon, text in info:
+            tk.Label(footer_frame, text=f"{icon}  {text}", font=("Helvetica", 12), fg="white", bg="black").pack(
+                anchor="w")
+
+
+def recharge_balance():
+    global current_user  # ensure access to the logged-in user
+    recharge_win = tk.Toplevel(r)
+    recharge_win.title("Recharge Balance")
+    screen_width = recharge_win.winfo_screenwidth()
+    screen_height = recharge_win.winfo_screenheight()
+    recharge_win.geometry(f"{screen_width}x{screen_height}")
+    recharge_win.configure(bg='Black')
+    car_img = Image.open("C:\\Users\\Rehan\\Desktop\\frpg.png")
+    car_img = car_img.resize((350, 250))
+    car_photo = ImageTk.PhotoImage(car_img)
+    recharge_win.car_photo = car_photo  # keep reference
+    img_frame = tk.Frame(recharge_win, bg='black')
+    img_frame.pack(pady=10)
+    tk.Label(img_frame, image=car_photo, bg='black').pack()
+
+    label = tk.Label(recharge_win, text="💰Enter amount to recharge:", font=('Helvatic', 22))
+    label.pack(pady=10)
+
+    amount_entry = tk.Entry(recharge_win, font=('Helvatic', 22))
+    amount_entry.pack(pady=10)
+
+    def confirm_recharge():
+        try:
+            amount = float(amount_entry.get())
+            current_user.recharge_balance(amount)
+            save_users(users, 'users.csv')  # Save updated balance
+            messagebox.showinfo("Success", f"Recharged Rs.{amount}. New balance: Rs.{current_user.balance}")
+            recharge_win.destroy()
+        except ValueError:
+            messagebox.showerror("Error", "Please enter a valid number.")
+
+    recharge_button = tk.Button(recharge_win, text="💳Recharge", font=('Helvatic', 22), command=confirm_recharge)
+    recharge_button.pack(pady=10)
+    info = [
+        ("📞", "021-234-6829"),
+        ("🌐", "www.onlinecarrentalhub.com"),
+        ("📍", "AT Street Main Road,Karachi")
+    ]
+    footer_frame = tk.Frame(recharge_win, bg='black')
+    footer_frame.pack(side='bottom', pady=20)
+    for icon, text in info:
+        tk.Label(footer_frame, text=f"{icon}  {text}", font=("Helvetica", 12), fg="white", bg="black").pack(anchor="w")
+        
+def return_car():
+    global current_user  # Logged-in user
+
+    cars = load_cars_from_csv('cars.csv')
+    rentals = load_rentals('rental_history.csv', users, cars)
+
+    active_rental = None
+    for rental in rentals:
+        if rental.username == current_user.username:
+            current_date = datetime.now().date()
+            if rental.start_date <= current_date <= rental.end_date or current_date > rental.end_date:
+                active_rental = rental
+                break
+
+    if not active_rental:
+        messagebox.showinfo("Return Car", "You have no car to return.")
+        return
+
+    confirm = messagebox.askyesno("Confirm Return", f"Do you want to return {active_rental.car.model}?")
+    if not confirm:
+        return
+
+    # Late return handling
+    current_date = datetime.now().date()
+    extra_cost = 0
+    if current_date > active_rental.end_date:
+        extra_days = (current_date - active_rental.end_date).days
+        extra_cost = extra_days * active_rental.car.price_per_day
+        current_user.balance -= extra_cost
+        messagebox.showwarning("Late Return", f"Late return. Rs.{extra_cost} has been deducted from your balance.")
+
+    # Mark car as available
+    for car in cars:
+        if car.car_id == active_rental.car.car_id:
+            car.is_available = True
+            break
+
+    # Clear user's current rental
+    current_user.current_rental = None
+
+    # Save updated users and cars
+    save_users(users, 'users.csv')
+    save_cars_to_csv(cars, 'cars.csv')
+
+    # 🔄 Update rental_history.csv with the new cost
+    updated_rows = []
+    with open('rental_history.csv', 'r', newline='') as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            if (row['username'] == current_user.username and
+                    row['car_id'] == str(active_rental.car.car_id) and
+                    row['start_date'] == str(active_rental.start_date) and
+                    row['end_date'] == str(active_rental.end_date)):
+                original_cost = float(row['cost'])
+                row['cost'] = str(original_cost + extra_cost)
+            updated_rows.append(row)
+
+    with open('rental_history.csv', 'w', newline='') as file:
+        fieldnames = ['username', 'car_id', 'car_model', 'start_date', 'end_date', 'cost']
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(updated_rows)
+
+    messagebox.showinfo("Return Successful", "Car returned successfully.")
+
+def give_feedback():
+    feedback_win = tk.Toplevel(r)
+    feedback_win.title("Submit Feedback")
+    screen_width = feedback_win.winfo_screenwidth()
+    screen_height = feedback_win.winfo_screenheight()
+    feedback_win.geometry(f"{screen_width}x{screen_height}")
+    feedback_win.configure(bg='Black')
+    car_img = Image.open("C:\\Users\\Rehan\\Desktop\\frpg.png")
+    car_img = car_img.resize((350, 250))
+    car_photo = ImageTk.PhotoImage(car_img)
+    feedback_win.car_photo = car_photo  # keep reference
+    img_frame = tk.Frame(feedback_win, bg='black')
+    img_frame.pack(pady=10)
+    tk.Label(img_frame, image=car_photo, bg='black').pack()
+
+    tk.Label(feedback_win, text="💬🖊Your Feedback:", font=("Helvatic", 22)).pack(pady=10)
+    feedback_text = tk.Text(feedback_win, height=8, width=70)
+    feedback_text.pack(pady=10)
+
+    def submit_feedback():
+        feedback = feedback_text.get("1.0", tk.END).strip()
+        if not feedback:
+            messagebox.showerror("Error", "Feedback cannot be empty.")
+            return
+
+        with open("feedback.csv", "a", newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([current_user.username, current_user.get_full_name(), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), feedback])
+
+        messagebox.showinfo("Thank you", "Your feedback has been submitted.")
+        feedback_win.destroy()
+
+    tk.Button(feedback_win, text="✅Submit",font=('Helvatic',22),command=submit_feedback).pack(pady=10)
+    info = [
+        ("📞", "021-234-6829"),
+        ("🌐", "www.onlinecarrentalhub.com"),
+        ("📍", "AT Street Main Road,Karachi")
+    ]
+    footer_frame = tk.Frame(feedback_win, bg='black')
+    footer_frame.pack(side='bottom', pady=20)
+    for icon, text in info:
+        tk.Label(footer_frame, text=f"{icon}  {text}", font=("Helvetica", 12), fg="white", bg="black").pack(anchor="w")
+def view_feedback():
+    feedback_win = tk.Toplevel(r)
+    feedback_win.title("Feedback")
+    screen_width = feedback_win.winfo_screenwidth()
+    screen_height = feedback_win.winfo_screenheight()
+    feedback_win.geometry(f"{screen_width}x{screen_height}")
+
+    tree = ttk.Treeview(feedback_win, columns=("Username", "Name", "Timestamp", "Feedback"), show='headings')
+    tree.heading("Username", text="Username")
+    tree.heading("Name", text="Name")
+    tree.heading("Timestamp", text="Time")
+    tree.heading("Feedback", text="Feedback")
+    tree.pack(fill=tk.BOTH, expand=True)
+
+    try:
+        with open("feedback.csv", "r", newline='') as file:
+            reader = csv.reader(file)
+            for row in reader:
+                # Optional: filter for current user
+                if row and (row[0] == current_user.username):  # Filter for only current user
+                    tree.insert("", tk.END, values=row)
+    except FileNotFoundError:
+        tk.Label(feedback_win, text="No feedback found.").pack(pady=20)
+
+#----------------------- Functions for  admin dashboard----------------------------------------#
+def view_all_customers():
+    cars = load_cars_from_csv('cars.csv')
+    users = load_users('users.csv')
+    assign_rentals_to_users('rental_history.csv', users, cars)
+    customer_window = Toplevel(r)
+    customer_window.title("All Customers")
+    screen_width = customer_window.winfo_screenwidth()
+    screen_height = customer_window.winfo_screenheight()
+    customer_window.geometry(f"{screen_width}x{screen_height}")
+    customer_window.configure(bg='Black')
+    car_img = Image.open("C:\\Users\\Rehan\\Desktop\\frpg.png")
+    car_img = car_img.resize((350, 250))
+    car_photo = ImageTk.PhotoImage(car_img)
+    customer_window.car_photo = car_photo  # keep reference
+    img_frame = tk.Frame(customer_window, bg='black')
+    img_frame.pack(pady=10)
+    tk.Label(img_frame, image=car_photo, bg='black').pack()
+
+    for user in users:
+            text = f"{user.get_full_name()} - Current Rental: {user.current_rental.car.model if user.current_rental else 'None'}"
+            tk.Label(customer_window, text=text).pack(pady=10)
+    scrollbar = tk.Scrollbar(customer_window)
+    scrollbar.pack(side="right", fill="y")
+    info = [
+        ("📞", "021-234-6829"),
+        ("🌐", "www.onlinecarrentalhub.com"),
+        ("📍", "AT Street Main Road,Karachi")
+    ]
+    footer_frame = tk.Frame(customer_window, bg='black')
+    footer_frame.pack(side='bottom', pady=20)
+    for icon, text in info:
+        tk.Label(footer_frame, text=f"{icon}  {text}", font=("Helvetica", 12), fg="white", bg="black").pack(anchor="w")
+
+def open_add_car(admin):
+        cars = load_cars_from_csv('cars.csv')
+        add_car_win = Toplevel(r)
+        add_car_win.title("Add New Car")
+        screen_width = add_car_win.winfo_screenwidth()
+        screen_height =add_car_win.winfo_screenheight()
+        add_car_win.geometry(f"{screen_width}x{screen_height}")
+        add_car_win.configure(bg='Black')
+
+        car_img = Image.open("C:\\Users\\Rehan\\Desktop\\frpg.png")
+        car_img = car_img.resize((350, 250))
+        car_photo = ImageTk.PhotoImage(car_img)
+        add_car_win.car_photo = car_photo  # keep reference
+        img_frame = tk.Frame(add_car_win, bg='black')
+        img_frame.pack(pady=10)
+        tk.Label(img_frame, image=car_photo, bg='black').pack()
+
+        frame = tk.Frame(add_car_win, bg="#1A1A1A")
+        frame.pack(pady=30)
+        btn_style = {
+            "bg": "white",
+            "fg": "black",
+            "bd": 2,
+            "relief": "ridge"
+        }
+
+        # Create the labels and entry fields for car attributes
+        brand_label = tk.Label(frame, text="🚘Car Brand:",**btn_style)
+        brand_label.grid(row=0,column=0,padx=10,pady=10)
+        brand_entry = tk.Entry(frame,**btn_style)
+        brand_entry.grid(row=0,column=1,padx=10,pady=10)
+
+        model_label = tk.Label(frame, text="🏷Car Model:",**btn_style)
+        model_label.grid(row=1,column=0,padx=10,pady=10)
+        model_entry = tk.Entry(frame,**btn_style)
+        model_entry.grid(row=1,column=1,padx=10,pady=10)
+
+        seating_capacity_label = tk.Label(frame, text="🪑Seating Capacity:",**btn_style)
+        seating_capacity_label.grid(row=2,column=0,padx=10,pady=10)
+        seating_capacity_entry = tk.Entry(frame,**btn_style)
+        seating_capacity_entry.grid(row=2,column=1,padx=10,pady=10)
+
+        price_per_day_label = tk.Label(frame, text="💰Price per Day:",**btn_style)
+        price_per_day_label.grid(row=3,column=0,padx=10,pady=10)
+        price_per_day_entry = tk.Entry(frame,**btn_style)
+        price_per_day_entry.grid(row=3,column=1,padx=10,pady=10)
+
+        # Add car action when the "Add" button is pressed
+        def add_car_action():
+            brand = brand_entry.get()
+            model = model_entry.get()
+            seating_capacity = int(seating_capacity_entry.get())  # Convert seating_capacity to integer
+            price_per_day = float(price_per_day_entry.get())  # Convert price to float
+            car_id = len(cars) + 1  # Generate a simple car ID based on the current list length
+            is_available = True  # Newly added car is available by default
+
+            # Create a new Car object
+            new_car = Car(car_id=car_id, brand=brand, model=model, seating_capacity=seating_capacity,
+                          price_per_day=price_per_day, is_available=is_available)
+
+            # Add the new car to the car list
+            cars.append(new_car)
+            admin.add_car(cars, new_car)
+            # Save the updated car list to the CSV file
+            save_cars_to_csv(cars, 'cars.csv')
+
+            # Show success message
+            messagebox.showinfo("Car Added", f"Car {new_car.model} has been added to the inventory.")
+
+            # Close the "Add Car" window
+            add_car_win.destroy()
+
+        # Create "Add" button to trigger the add_car_action function
+        add_car_button = tk.Button(add_car_win, text="➕Add Car",font=("Helvetica", 22),width=20,bg='#FA8072', command=add_car_action)
+        add_car_button.pack(pady=20)
+        info = [
+            ("📞", "021-234-6829"),
+            ("🌐", "www.onlinecarrentalhub.com"),
+            ("📍", "AT Street Main Road,Karachi")
+        ]
+        footer_frame = tk.Frame(add_car_win, bg='black')
+        footer_frame.pack(side='bottom', pady=20)
+        for icon, text in info:
+            tk.Label(footer_frame, text=f"{icon}  {text}", font=("Helvetica", 12), fg="white", bg="black").pack(anchor="w")
+
+def open_remove_car(admin):
+    cars = load_cars_from_csv('cars.csv')
+    remove_car_win = Toplevel(r)
+    remove_car_win.title("Remove Car")
+    screen_width = remove_car_win.winfo_screenwidth()
+    screen_height = remove_car_win.winfo_screenheight()
+    remove_car_win.geometry(f"{screen_width}x{screen_height}")
+    remove_car_win.configure(bg='Black')
+
+    car_img = Image.open("C:\\Users\\Rehan\\Desktop\\frpg.png")
+    car_img = car_img.resize((350, 250))
+    car_photo = ImageTk.PhotoImage(car_img)
+    remove_car_win.car_photo = car_photo  # keep reference
+    img_frame = tk.Frame(remove_car_win, bg='black')
+    img_frame.pack(pady=10)
+    tk.Label(img_frame, image=car_photo, bg='black').pack()
+
+
+    tk.Label(remove_car_win, text="🔽Select a car to remove:",font=('Helvatic',22)).pack(pady=10)
+
+    # Prepare car options for dropdown
+    car_options = [f"ID: {car.car_id} - {car.brand} {car.model}" for car in cars]
+
+    selected_car = tk.StringVar()
+    car_dropdown = ttk.Combobox(remove_car_win, textvariable=selected_car, values=car_options, state="readonly", width=50)
+    car_dropdown.pack(pady=10)
+
+    def remove_action():
+        selected = selected_car.get()
+        if selected:
+            # Extract the car ID from the selected string (after "ID: " and before " -")
+            car_id_str = selected.split(" - ")[0].replace("ID: ", "")
+            try:
+                car_id = int(car_id_str)
+                initial_len = len(cars)
+                admin.remove_car(cars, car_id)
+
+                if len(cars) < initial_len:
+                    save_cars_to_csv(cars, 'cars.csv')
+                    messagebox.showinfo("Success", f"Car ID {car_id} removed.")
+                    remove_car_win.destroy()
+                else:
+                    messagebox.showerror("Error", f"No car found with ID {car_id}.")
+            except ValueError:
+                messagebox.showerror("Error", "Failed to extract Car ID.")
+        else:
+            messagebox.showerror("Selection Missing", "Please select a car from the list.")
+
+    tk.Button(remove_car_win, text="➖🚗Remove Car", font=('Helvatic',22),bg='#FA8072',command=remove_action).pack(pady=20)
+    info = [
+        ("📞", "021-234-6829"),
+        ("🌐", "www.onlinecarrentalhub.com"),
+        ("📍", "AT Street Main Road,Karachi")
+    ]
+    footer_frame = tk.Frame(remove_car_win, bg='black')
+    footer_frame.pack(side='bottom', pady=20)
+    for icon, text in info:
+        tk.Label(footer_frame, text=f"{icon}  {text}", font=("Helvetica", 12), fg="white", bg="black").pack(anchor="w")
+
+def view_reserved_cars():
+    cars=load_cars_from_csv('cars.csv')
+    reserved_cars = [car for car in cars if not car.is_available]
+
+    reserved_win = Toplevel(r)
+    screen_width = reserved_win.winfo_screenwidth()
+    screen_height = reserved_win.winfo_screenheight()
+    reserved_win.geometry(f"{screen_width}x{screen_height}")
+    reserved_win.configure(bg='Black')
+
+    car_img = Image.open("C:\\Users\\Rehan\\Desktop\\frpg.png")
+    car_img = car_img.resize((350, 250))
+    car_photo = ImageTk.PhotoImage(car_img)
+    reserved_win.car_photo = car_photo  # keep reference
+    img_frame = tk.Frame(reserved_win, bg='black')
+    img_frame.pack(pady=10)
+    tk.Label(img_frame, image=car_photo, bg='black').pack()
+
+    if reserved_cars:
+        for car in reserved_cars:
+            info = f"ID: {car.car_id} | {car.brand} {car.model} | ₹{car.price_per_day}/day"
+            tk.Label(reserved_win, text=info,font=('Helavatic',22)).pack(pady=5)
+    else:
+        tk.Label(reserved_win, text="No cars are currently reserved.").pack(pady=20)
+
+    info = [
+        ("📞", "021-234-6829"),
+        ("🌐", "www.onlinecarrentalhub.com"),
+        ("📍", "AT Street Main Road,Karachi")
+    ]
+    footer_frame = tk.Frame(reserved_win, bg='black')
+    footer_frame.pack(side='bottom', pady=20)
+    for icon, text in info:
+        tk.Label(footer_frame, text=f"{icon}  {text}", font=("Helvetica", 12), fg="white", bg="black").pack(anchor="w")
+
+def view_all_feedback():
+    if not os.path.exists('feedback.csv'):
+        messagebox.showinfo("No Feedback", "No feedback has been submitted yet.")
+        return
+
+    feedback_win = Toplevel(r)
+    feedback_win.title("All Feedback")
+    screen_width = feedback_win.winfo_screenwidth()
+    screen_height = feedback_win.winfo_screenheight()
+    feedback_win.geometry(f"{screen_width}x{screen_height}")
+    feedback_win.configure(bg='Black')
+
+    car_img = Image.open("C:\\Users\\Rehan\\Desktop\\frpg.png")
+    car_img = car_img.resize((350, 250))
+    car_photo = ImageTk.PhotoImage(car_img)
+    feedback_win.car_photo = car_photo  # keep reference
+    img_frame = tk.Frame(feedback_win, bg='black')
+    img_frame.pack(pady=10)
+    tk.Label(img_frame, image=car_photo, bg='black').pack()
+
+    tk.Label(feedback_win, text="⭐⭐⭐⭐⭐User Feedback⭐⭐⭐⭐⭐", font=("Segoe UI", 14, "bold")).pack(pady=10)
+
+    feedback_text = tk.Text(feedback_win, wrap="word", width=70, height=20)
+    feedback_text.pack(padx=10, pady=10)
+
+    with open('feedback.csv', newline='', encoding='utf-8') as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if len(row) >= 3:
+                username = row[0]
+                full_name = row[1]
+                feedback = ",".join(row[2:])  # Join all remaining columns as feedback
+                feedback_text.insert(tk.END, f"{full_name} ({username}):\n{feedback.strip()}\n\n")
+
+    feedback_text.config(state="disabled")
+
+    info = [
+        ("📞", "021-234-6829"),
+        ("🌐", "www.onlinecarrentalhub.com"),
+        ("📍", "AT Street Main Road,Karachi")
+    ]
+    footer_frame = tk.Frame(feedback_win, bg='black')
+    footer_frame.pack(side='bottom', pady=20)
+    for icon, text in info:
+        tk.Label(footer_frame, text=f"{icon}  {text}", font=("Helvetica", 12), fg="white", bg="black").pack(anchor="w")
+
+# ---------------------- Classes and Functions for the Car Rental System ---------------------- #
+class Person(ABC):
+    def __init__(self, username, first_name, last_name):
+        self.username = username
+        self.first_name = first_name
+        self.last_name = last_name
+
+        @abstractmethod
+        def get_full_name(self):
+                pass
+
+class User(Person):
+    def __init__(self, username, password, first_name, last_name, balance):
+        self.username = username
+        self.password = password
+        self.first_name = first_name
+        self.last_name = last_name
+        self.balance = float(balance)
+        self.rental_history = []
+        self.current_rental = None
+
+    def get_full_name(self):
+        return f"{self.first_name} {self.last_name}"
+
+    def rent_car(self, car, start_date, end_date):
+        if self.current_rental:
+            print("You already have a car reserved.")
+            return False
+
+        total_days = (end_date - start_date).days + 1
+        cost = total_days * car.price_per_day
+
+        if self.balance < float(cost):
+            print("Insufficient balance.")
+            return False
+
+        self.balance -= cost
+        self.current_rental = Rental(self.username, car, start_date, end_date, cost)
+        self.rental_history.append(self.current_rental)
+        save_rental(self.current_rental, 'rental_history.csv')
+        car.is_available = False
+        print(f"Car {car.model} rented successfully from {start_date} to {end_date}.")
+        return True
+
+    def view_rental_history(self):
+        if not self.rental_history:
+            print("No rental history found.")
+        else:
+            print("\nRental History:")
+            for rental in self.rental_history:
+                print(f"Car: {rental.car.model}, From: {rental.start_date}, To: {rental.end_date}, Cost: Rs.{rental.cost}")
+
+    def recharge_balance(self, amount):
+        self.balance += amount
+        print(f"Balance recharged. New balance: Rs.{self.balance}")
+
+    def return_car(self, current_date):
+        if self.current_rental:
+            if current_date > self.current_rental.end_date:
+                extra_days = (current_date - self.current_rental.end_date).days
+                extra_cost = extra_days * self.current_rental.car.price_per_day
+                self.balance -= extra_cost
+                print(f"Late return. Extra charge of Rs.{extra_cost} deducted.")
+            self.current_rental.car.is_available = True
+            self.current_rental = None
+
+class Admin(Person):
+    def __init__(self, username, password):
+        self.username='admin'
+        self.password ='admin123'
+
+    def get_full_name(self):
+        return "Administrator"
+
+    def add_car(self, car_list, car):
+        car_list.append(car)
+        print(f"Car {car.model} added to inventory.")
+
+    def remove_car(self, car_list, car_id):
+        for car in car_list:
+            if car.car_id == car_id:
+                car_list.remove(car)
+                print(f"Car {car.model} removed from inventory.")
+                return
+        print("Car ID not found.")
+
+    def view_all_customers(self, users):
+        for user in users:
+            print(f"{user.get_full_name()} - Current Rental: {user.current_rental.car.model if user.current_rental else 'None'}")
+
+class Rental:
+    def __init__(self, username, car, start_date, end_date, cost):
+        self.username = username
+        self.car = car
+        self.start_date = start_date
+        self.end_date = end_date
+        self.cost = cost
+
+class Car:
+    def __init__(self, car_id, brand, model,seating_capacity, price_per_day, is_available=True):
+        self.car_id = int(car_id)
+        self.brand = brand
+        self.model = model
+        self.seating_capacity=seating_capacity
+        self.price_per_day = price_per_day
+        self.is_available = is_available
+
+    def __str__(self):
+        return f"{self.brand} {self.model} - Price/day: Rs.{self.price_per_day}, Available: {'Yes' if self.is_available else 'No'}"
+    
+#-----------------------CSV file saving and loading functions-------------------
+def save_rental(rental, filename):
+    file_exists = os.path.exists(filename)
+
+    with open(filename, 'a', newline='') as file:  # newline='' prevents extra/missing newlines
+        fieldnames = ['username', 'car_id', 'car_model', 'start_date', 'end_date', 'cost']
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+
+        if not file_exists:
+            writer.writeheader()
+
+        writer.writerow({
+            'username': rental.username,
+            'car_id': rental.car.car_id,
+            'car_model': rental.car.model,
+            'start_date': rental.start_date,
+            'end_date': rental.end_date,
+            'cost': rental.cost
+        })
+
+def load_rentals(filename, users,cars):
+    rentals = []
+    if os.path.exists(filename):
+        with open(filename, 'r') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                username = row['username']
+                car_id = int(row['car_id'])
+                car = next((c for c in cars if c.car_id == car_id), None)
+                if not car:
+                    continue  # Skip if car not found
+
+                rental = Rental(
+                    username=username,
+                    car=car,
+                    start_date=datetime.strptime(row['start_date'], "%Y-%m-%d").date(),
+                    end_date=datetime.strptime(row['end_date'], "%Y-%m-%d").date(),
+                    cost=float(row['cost'])
+                )
+                rentals.append(rental)
+
+                # Link latest rental to user
+                user = next((u for u in users if u.username.strip().lower() == username.strip().lower()), None)
+                if user:
+                    if user.current_rental is None or rental.start_date > user.current_rental.start_date:
+                        user.current_rental = rental
+                        user.rental_history.append(rental)
+    return rentals
+
+def assign_rentals_to_users(rental_file, users, cars):
+    if not os.path.exists(rental_file):
+        return
+
+    with open(rental_file, 'r') as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            username = row['username']
+            car_id = int(row['car_id'])
+
+            user = next((u for u in users if u.username.strip().lower() == username.strip().lower()), None)
+            car = next((c for c in cars if c.car_id == car_id), None)
+
+            if user and car:
+                rental = Rental(
+                    username=username,
+                    car=car,
+                    start_date=datetime.strptime(row['start_date'], "%Y-%m-%d").date(),
+                    end_date=datetime.strptime(row['end_date'], "%Y-%m-%d").date(),
+                    cost=float(row['cost'])
+                )
+
+                user.rental_history.append(rental)
+
+                today = datetime.today().date()
+                if rental.start_date <= today <= rental.end_date:
+                    user.current_rental = rental
+
+def load_cars_from_csv(filename):
+    cars = []
+    if os.path.exists(filename):
+        with open(filename, 'r') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                car = Car(
+                    car_id=int(row['car_id']),
+                    brand=row['brand'],
+                    model=row['model'],
+                    seating_capacity=int(row['seating_capacity']),
+                    price_per_day=float(row['price_per_day']),  # ✅ Convert here
+                    is_available=row['is_available'].lower() == 'true'  # ✅ Convert string to bool
+                )
+                cars.append(car)
+    return cars
+
+def save_cars_to_csv(cars, filename):
+    with open(filename, 'w', newline='') as file:
+        fieldnames = ['car_id', 'brand', 'model','seating_capacity', 'price_per_day', 'is_available']
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        for car in cars:
+            writer.writerow({field: getattr(car, field) for field in fieldnames})
+            
+def load_users(filename):
+    users = []
+    if os.path.exists(filename):
+        with open(filename, 'r') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                users.append(User(**row))
+    return users
+
+
+def save_users(users, filename):
+    with open(filename, 'w', newline='') as file:
+        fieldnames = ['username', 'password', 'first_name', 'last_name', 'balance']
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        for user in users:
+            writer.writerow({field: getattr(user, field) for field in fieldnames})
+            
+# ---------------------- Welcome Screen ---------------------- #
+
+def command1():
+    r.withdraw()  # Hide the welcome screen
+    main_menu()
+
+
+# ---------------------- Main Menu ---------------------- #
+
+def main_menu():
+    menu_win = Toplevel(r)
+    menu_win.title("Car Rental System")
+    screen_width = menu_win.winfo_screenwidth()
+    screen_height = menu_win.winfo_screenheight()
+    menu_win.geometry(f'{screen_width}x{screen_height}')
+    menu_win.configure(bg='Black')
+
+    car_img = Image.open("C:\\Users\\Rehan\\Desktop\\frpg.png")
+    car_img = car_img.resize((350, 250))
+    car_photo = ImageTk.PhotoImage(car_img)
+    menu_win.car_photo = car_photo  # keep reference
+    img_frame = tk.Frame(menu_win, bg='black')
+    img_frame.pack(pady=10)
+    tk.Label(img_frame, image=car_photo, bg='black').pack()
+
+    register_button = tk.Button(menu_win, text="📝Register", command=register_screen,font=("Helvetica", 26),width=22,height=1)
+    register_button.pack(pady=15)
+
+    login_user_button = tk.Button(menu_win, text="🔑Login as User", command=lambda: login_screen("user"),font=("Helvetica", 26),width=22,height=1)
+    login_user_button.pack(pady=15)
+
+    login_admin_button = tk.Button(menu_win, text="🔑Login as Admin", command=lambda: login_screen("admin"),font=("Helvetica", 26),width=22,height=1)
+    login_admin_button.pack(pady=15)
+
+    exit_button = tk.Button(menu_win, text="❌Exit", command=menu_win.quit,font=("Helvetica", 26),width=22,height=1)
+    exit_button.pack(pady=15)
+
+    info = [
+        ("📞", "021-234-6829"),
+        ("🌐", "www.onlinecarrentalhub.com"),
+        ("📍", "AT Street Main Road,Karachi")
+    ]
+    footer_frame = tk.Frame(menu_win, bg='black')
+    footer_frame.pack(side='bottom', pady=20)
+    for icon, text in info:
+        tk.Label(footer_frame, text=f"{icon}  {text}", font=("Helvetica", 12), fg="white", bg="black").pack(anchor="w")
+
+
+# ---------------------- Register Screen ---------------------- #
+
+users = load_users('users.csv')
+def register_screen():
+    register_win = Toplevel(r)
+    register_win.title("Register")
+    screen_width = register_win.winfo_screenwidth()
+    screen_height = register_win.winfo_screenheight()
+    register_win.geometry(f"{screen_width}x{screen_height}")
+
+    car_img = Image.open("C:\\Users\\Rehan\\Desktop\\frpg.png")
+    car_img = car_img.resize((350, 250))
+    car_photo = ImageTk.PhotoImage(car_img)
+    register_win.car_photo = car_photo  # keep reference
+    img_frame = tk.Frame(register_win, bg='black')
+    img_frame.pack(pady=10)
+    tk.Label(img_frame, image=car_photo, bg='black').pack()
+
+    frame = tk.Frame(register_win, bg="#1A1A1A")
+    frame.pack(pady=30)
+    btn_style = {
+        "bg": "white",
+        "fg": "black",
+        "bd": 2,
+        "relief": "ridge"
+    }
+
+    username_label =tk.Label(frame, text="👤Username",**btn_style)
+    username_label.grid(row=0, column=0, padx=10, pady=10)
+    username_entry = tk.Entry(frame, **btn_style)
+    username_entry.grid(row=0, column=1, padx=10, pady=10)
+
+    password_label = tk.Label(frame, text="🔒Password",**btn_style)
+    password_label.grid(row=1, column=0, padx=10, pady=10)
+    password_entry = tk.Entry(frame, show="*",**btn_style)
+    password_entry.grid(row=1, column=1, padx=10, pady=10)
+
+    first_name_label = tk.Label(frame, text="🧍First Name",**btn_style)
+    first_name_label.grid(row=2, column=0, padx=10, pady=10)
+    first_name_entry = tk.Entry(frame,**btn_style)
+    first_name_entry.grid(row=2, column=1, padx=10, pady=10)
+
+    last_name_label = tk.Label(frame, text="🧍‍Last Name",**btn_style)
+    last_name_label.grid(row=3, column=0, padx=10, pady=10)
+    last_name_entry = tk.Entry(frame,**btn_style)
+    last_name_entry.grid(row=3, column=1, padx=10, pady=10)
+
+    balance_label = tk.Label(frame, text="💰Balance",**btn_style)
+    balance_label.grid(row=4, column=0, padx=10, pady=10)
+    balance_entry = tk.Entry(frame,**btn_style)
+    balance_entry.grid(row=4, column=1, padx=10, pady=10)
+
+    def register_action():
+        username = username_entry.get().strip()
+        password = password_entry.get().strip()
+        first_name = first_name_entry.get().strip()
+        last_name = last_name_entry.get().strip()
+        balance = balance_entry.get().strip()
+
+        # Check if any field is empty
+        if not username or not password or not first_name or not last_name or not balance:
+            messagebox.showerror("Input Error", "All fields must be filled!")
+            return
+
+        # Check if balance is a valid number
+        try:
+            balance = float(balance)
+        except ValueError:
+            messagebox.showerror("Input Error", "Balance must be a valid number.")
+            return
+
+        # Proceed if validation passes
+        users.append(User(username, password, first_name, last_name, balance))
+        save_users(users, "users.csv")
+        messagebox.showinfo("Registration Successful", "You have been successfully registered!")
+        register_win.destroy()
+
+    register_button = tk.Button(register_win, text="📝Register", command=register_action,font=("Helvetica", 14),width=14)
+    register_button.pack(pady=20)
+    info = [
+        ("📞", "021-234-6829"),
+        ("🌐", "www.onlinecarrentalhub.com"),
+        ("📍", "AT Street Main Road,Karachi")
+    ]
+    footer_frame = tk.Frame(register_win, bg='black')
+    footer_frame.pack(side='bottom', pady=20)
+    for icon, text in info:
+        tk.Label(footer_frame, text=f"{icon}  {text}", font=("Helvetica", 12), fg="white", bg="black").pack(anchor="w")
+
+    register_win.configure(bg='Black')
+
+class LoginError(Exception):
+    pass
+
+# ---------------------- Login Screen ---------------------- #
+def login_user(username, password):
+    username =username
+    password =password
+    for user in users:
+        if user.username == username and user.password == password:
+            print(f"Welcome {user.get_full_name()}!")
+            return user
+    raise LoginError("Invalid username or password.")
+
+
+def login_admin(username,password):
+    if username=='admin' and password=='admin123':
+            return Admin(username,password)
+    else:
+        return None
+
+def login_screen(user_type):
+    login_win = Toplevel(r)
+    login_win.title("Login")
+    screen_width = login_win.winfo_screenwidth()
+    screen_height = login_win.winfo_screenheight()
+    login_win.geometry(f"{screen_width}x{screen_height}")
+
+    car_img = Image.open("C:\\Users\\Rehan\\Desktop\\frpg.png")
+    car_img = car_img.resize((350, 250))
+    car_photo = ImageTk.PhotoImage(car_img)
+    login_win.car_photo = car_photo  # keep reference
+    img_frame = tk.Frame(login_win, bg='black')
+    img_frame.pack(pady=10)
+    tk.Label(img_frame, image=car_photo, bg='black').pack()
+
+    frame = tk.Frame(login_win, bg="#1A1A1A")
+    frame.pack(pady=30)
+    btn_style = {
+        "bg": "white",
+        "fg": "black",
+        "bd": 2,
+        "relief": "ridge"
+    }
+
+    username_label = tk.Label(frame, text="👤Username",**btn_style)
+    username_label.grid(row=0,column=0,padx=10,pady=10)
+    username_entry = tk.Entry(frame,**btn_style)
+    username_entry.grid(row=0,column=1,padx=10,pady=10)
+
+    password_label = tk.Label(frame, text="🔒Password",**btn_style)
+    password_label.grid(row=1,column=0,padx=10,pady=10)
+    password_entry = tk.Entry(frame, show="*",**btn_style)
+    password_entry.grid(row=1,column=1,padx=10,pady=10)
+
+    def login_action():
+        username = username_entry.get()
+        password = password_entry.get()
+        try:
+            if user_type == "user":
+                user = login_user(username, password)
+                if user:
+                    global current_user
+                    current_user = user  # Store logged-in user
+                    messagebox.showinfo("Login Success", f"Welcome, {user.get_full_name()}!")
+                    user_dashboard(user)
+                else:
+                    messagebox.showerror("Login Failed", "Invalid username or password.")
+            elif user_type == "admin":
+                admin = login_admin(username, password)
+                if admin:
+                    admin_dashboard(admin)  # Pass the Admin object
+                else:
+                    messagebox.showerror("Login Failed", "Invalid admin credentials")
+            login_win.destroy()
+        except Exception as e:
+            messagebox.showerror("Login Failed", f"Error: {e}")
+
+    login_button = tk.Button(login_win, text="👆Login",font=("Helvetica", 14),width=14,command=login_action)
+    login_button.pack(pady=20)
+    info = [
+        ("📞", "021-234-6829"),
+        ("🌐", "www.onlinecarrentalhub.com"),
+        ("📍", "AT Street Main Road,Karachi")
+    ]
+    footer_frame = tk.Frame(login_win, bg='black')
+    footer_frame.pack(side='bottom', pady=20)
+    for icon, text in info:
+        tk.Label(footer_frame, text=f"{icon}  {text}", font=("Helvetica", 12), fg="white", bg="black").pack(anchor="w")
+
+    login_win.configure(bg='Black')
+
+# ---------------------- User Dashboard ---------------------- #
+
+def user_dashboard(user):
+    user_win = Toplevel(r)
+    user_win.title("User Dashboard")
+    screen_width = user_win.winfo_screenwidth()
+    screen_height = user_win.winfo_screenheight()
+    user_win.geometry(f"{screen_width}x{screen_height}")
+
+    car_img = Image.open("C:\\Users\\Rehan\\Desktop\\frpg.png")
+    car_img = car_img.resize((350, 250))
+    car_photo = ImageTk.PhotoImage(car_img)
+    user_win.car_photo = car_photo  # keep reference
+    img_frame = tk.Frame(user_win, bg='black')
+    img_frame.pack(pady=10)
+    tk.Label(img_frame, image=car_photo, bg='black').pack()
+
+    frame = tk.Frame(user_win, bg="#1A1A1A")
+    frame.pack(pady=30)
+    btn_style = {
+        "bg": "white",
+        "fg": "black",
+        "bd": 2,
+        "relief": "ridge"
+    }
+
+    def open_rental_history():
+        view_rental_history(user)
+
+    view_cars_button = tk.Button(frame, text="🚘View Available Cars", command=view_available_cars,**btn_style)
+    view_cars_button.grid(row=0,column=0,padx=10,pady=10)
+
+    rent_car_button = tk.Button(frame, text="🔑Rent a Car", command=rent_car,**btn_style)
+    rent_car_button.grid(row=1,column=0,padx=10,pady=10)
+
+    view_history_button = tk.Button(frame, text="🕓View Rental History", command=open_rental_history,**btn_style)
+    view_history_button.grid(row=2,column=0,padx=10,pady=10)
+
+    recharge_button = tk.Button(frame, text="💳Recharge Balance", command=recharge_balance,**btn_style)
+    recharge_button.grid(row=3,column=0,padx=10,pady=10)
+
+    return_car_button = tk.Button(frame, text="🔁Return Car", command=return_car,**btn_style)
+    return_car_button.grid(row=4,column=0,padx=10,pady=10)
+
+    tk.Button(frame, text="📝Give Feedback", command=give_feedback,**btn_style).grid(row=5,column=0,padx=10,pady=10)
+    tk.Button(frame, text="👀View My Feedback", command=view_feedback,**btn_style).grid(row=6,column=0,padx=10,pady=10)
+
+    logout_button = tk.Button(user_win, text="🔒Logout",font=("Helvetica", 14),width=14, command=user_win.quit)
+    logout_button.pack(pady=10)
+
+    info = [
+        ("📞", "021-234-6829"),
+        ("🌐", "www.onlinecarrentalhub.com"),
+        ("📍", "AT Street Main Road,Karachi")
+    ]
+    footer_frame = tk.Frame(user_win, bg='black')
+    footer_frame.pack(side='bottom', pady=10)
+    for icon, text in info:
+        tk.Label(footer_frame, text=f"{icon}  {text}", font=("Helvetica", 12), fg="white", bg="black").pack(anchor="w")
+
+    user_win.configure(bg='Black')
+# ---------------------- Admin Dashboard ---------------------- #
+
+def admin_dashboard(admin):
+    admin_win = Toplevel(r)
+    admin_win.title("Admin Dashboard")
+    screen_width = admin_win.winfo_screenwidth()
+    screen_height = admin_win.winfo_screenheight()
+    admin_win.geometry(f"{screen_width}x{screen_height}")
+    cars = load_cars_from_csv('cars.csv')
+
+    car_img = Image.open("C:\\Users\\Rehan\\Desktop\\frpg.png")
+    car_img = car_img.resize((350, 250))
+    car_photo = ImageTk.PhotoImage(car_img)
+    admin_win.car_photo = car_photo  # keep reference
+    img_frame = tk.Frame(admin_win, bg='black')
+    img_frame.pack(pady=10)
+    tk.Label(img_frame, image=car_photo, bg='black').pack()
+
+    frame = tk.Frame(admin_win, bg="#1A1A1A")
+    frame.pack(pady=30)
+    btn_style = {
+        "bg": "white",
+        "fg": "black",
+        "bd": 2,
+        "relief": "ridge"
+    }
+
+    view_customers_button = tk.Button(frame, text="👥View All Customers", command=view_all_customers,**btn_style)
+    view_customers_button.grid(row=0,column=0,padx=10,pady=10)
+
+    view_reserved_button = tk.Button(frame, text="📅View Reserved Cars", command=view_reserved_cars,**btn_style)
+    view_reserved_button.grid(row=1,column=0,padx=10,pady=10)
+
+    add_car_button = tk.Button(frame, text="➕Add Car", command=lambda: open_add_car(admin),**btn_style)
+    add_car_button.grid(row=2,column=0,padx=10,pady=10)
+
+    remove_car_button = tk.Button(frame, text="➖Remove Car", command=lambda: open_remove_car(admin),**btn_style)
+    remove_car_button.grid(row=3,column=0,padx=10,pady=10)
+
+    tk.Button(frame, text="📝View All Feedback", command=view_all_feedback,**btn_style).grid(row=4,column=0,padx=10,pady=10)
+
+    logout_button = tk.Button(admin_win, text="🔒Logout",font=("Helvetica", 14),width=14, command=admin_win.quit)
+    logout_button.pack(pady=10)
+
+    info = [
+        ("📞", "021-234-6829"),
+        ("🌐", "www.onlinecarrentalhub.com"),
+        ("📍", "AT Street Main Road,Karachi")
+    ]
+    footer_frame = tk.Frame(admin_win, bg='black')
+    footer_frame.pack(side='bottom', pady=20)
+    for icon, text in info:
+        tk.Label(footer_frame, text=f"{icon}  {text}", font=("Helvetica", 12), fg="white", bg="black").pack(anchor="w")
+
+    admin_win.configure(bg='Black')
+# ---------------------- Main Window / Welcome Screen ---------------------- #
+
+r = tk.Tk()
+r.title("Car Rental System")
+screen_width = r.winfo_screenwidth()
+screen_height = r.winfo_screenheight()
+r.geometry(f"{screen_width}x{screen_height}")
+car_img = Image.open("C:\\Users\\Rehan\\Desktop\\frpg.png")
+car_img = car_img.resize((350, 250))
+car_photo = ImageTk.PhotoImage(car_img)
+
+# Top Title Section
+title_frame = tk.Frame(r, bg='black')
+title_frame.pack(pady=10)
+
+tk.Label(title_frame, text="➤➤➤", font=("Helvetica", 40, "bold"), fg="red", bg="black").pack()
+tk.Label(title_frame, text="RENT", font=("Helvetica", 50, "bold"), fg="white", bg="black").pack()
+tk.Label(title_frame, text="LUXURY CAR", font=("Helvetica", 50, "bold"), fg="white", bg="black").pack()
+
+# Image Section
+img_frame = tk.Frame(r, bg='black')
+img_frame.pack(pady=10)
+tk.Label(img_frame, image=car_photo, bg='black').pack()
+
+# Tagline + Button
+cta_frame = tk.Frame(r, bg='black')
+cta_frame.pack(pady=20)
+
+tk.Label(cta_frame, text="DRIVE YOUR WAY TO FREEDOM,\nRENT A CAR TODAY!", font=("Helvetica", 18), fg="white", bg="black", justify="center").pack(pady=10)
+
+order_btn = tk.Button(cta_frame, text="ORDER NOW ➤➤", font=("Helvetica", 16, "bold"), bg="red", fg="white", command=command1)
+order_btn.pack()
+
+# Contact Info
+footer_frame = tk.Frame(r, bg='black')
+footer_frame.pack(side=tk.BOTTOM, pady=20)
+
+info = [
+        ("📞", "021-234-6829"),
+        ("🌐", "www.onlinecarrentalhub.com"),
+        ("📍", "AT Street Main Road,Karachi")
+]
+
+for icon, text in info:
+    tk.Label(footer_frame, text=f"{icon}  {text}", font=("Helvetica", 12), fg="white", bg="black").pack(anchor="w")
+
+r.configure(bg="Black")
+r.mainloop()
