@@ -6,7 +6,7 @@ from collections import defaultdict
 # -----------------------------
 # LZ77 Compression
 # -----------------------------
-def lz77_compress(text, window_size=1000, lookahead_buffer=200):
+def lz77_compress(text, window_size=100, lookahead_buffer=20):
     i = 0
     tokens = []
     while i < len(text):
@@ -27,12 +27,9 @@ def lz77_compress(text, window_size=1000, lookahead_buffer=200):
         i += best_length + (1 if next_char else 0)
     return tokens
 
-
 def lz77_decompress(tokens):
     output = ""
     for distance, length, next_char in tokens:
-        distance = int(distance)
-        length = int(length)
         if distance == 0:
             output += next_char
         else:
@@ -41,7 +38,6 @@ def lz77_decompress(tokens):
                 output += output[start + k]
             output += next_char
     return output
-
 
 # -----------------------------
 # Huffman Coding
@@ -52,14 +48,12 @@ class Node:
         self.freq = freq
         self.left = None
         self.right = None
-
     def __lt__(self, other):
         return self.freq < other.freq
 
-
 def build_huffman_tree(data):
     if not data:
-        return Node()
+        return Node()  # empty tree
     freq = defaultdict(int)
     for item in data:
         freq[item] += 1
@@ -74,7 +68,6 @@ def build_huffman_tree(data):
         heapq.heappush(heap, merged)
     return heap[0]
 
-
 def build_huffman_codes(node, prefix="", codebook=None):
     if codebook is None:
         codebook = {}
@@ -87,10 +80,8 @@ def build_huffman_codes(node, prefix="", codebook=None):
         build_huffman_codes(node.right, prefix + "1", codebook)
     return codebook
 
-
 def huffman_encode(data, codebook):
     return "".join(codebook[item] for item in data)
-
 
 def huffman_decode(encoded_str, root):
     if root is None:
@@ -104,67 +95,40 @@ def huffman_decode(encoded_str, root):
             node = root
     return decoded
 
-
 # -----------------------------
 # Tokens ↔ Strings
 # -----------------------------
 def tokens_to_symbols(tokens):
-    return [f"{d},{l},{c}" for d, l, c in tokens]
-
+    return [pickle.dumps(t) for t in tokens]
 
 def symbols_to_tokens(symbols):
-    return [tuple(s.split(',', 2)) for s in symbols]
-
+    return [pickle.loads(s) for s in symbols]
 
 # -----------------------------
-# Main Program
+# File-based Compress/Decompress
 # -----------------------------
-def compress_file(input_file, output_file):
-    with open(input_file, "r", encoding="utf-8") as f:
-        text = f.read()
-
-    original_size = len(text.encode("utf-8"))
-
-    paragraph_len = max((len(p) for p in text.split('\n') if p.strip()), default=0)
-    window_size = max(1000, paragraph_len)
-    lookahead_buffer = max(500, paragraph_len)
-
+def compress_file(input_text):
     start = time.time()
-    tokens = lz77_compress(text, window_size, lookahead_buffer)
+    original_size = len(input_text.encode("utf-8"))
+    tokens = lz77_compress(input_text)
     symbols = tokens_to_symbols(tokens)
     huff_root = build_huffman_tree(symbols)
     huff_codes = build_huffman_codes(huff_root)
     encoded = huffman_encode(symbols, huff_codes)
 
-    with open(output_file, "wb") as f:
-        pickle.dump({"encoded": encoded, "huff_tree": huff_root}, f)
-
-    compressed_size = len(encoded.encode("utf-8"))
+    compressed_data = {"encoded": encoded, "huff_tree": huff_root}
+    compressed_size = len(pickle.dumps(compressed_data))
     ratio = (1 - compressed_size / max(original_size, 1)) * 100
     end = time.time()
 
-    print("✅ Compression complete!")
-    print(f"Original Size: {original_size} bytes")
-    print(f"Compressed Size: {compressed_size} bytes")
-    print(f"Compression Ratio: {ratio:.2f}%")
-    print(f"Time Taken: {end - start:.4f} s")
+    return compressed_data, original_size, compressed_size, ratio, end - start
 
-
-def decompress_file(input_file, output_file):
-    with open(input_file, "rb") as f:
-        obj = pickle.load(f)
-
+def decompress_file(compressed_data):
     start = time.time()
-    encoded = obj["encoded"]
-    huff_root = obj["huff_tree"]
+    encoded = compressed_data.get("encoded", "")
+    huff_root = compressed_data.get("huff_tree", None)
     decoded_symbols = huffman_decode(encoded, huff_root)
     tokens = symbols_to_tokens(decoded_symbols)
     decompressed_text = lz77_decompress(tokens)
-
-    with open(output_file, "w", encoding="utf-8") as f:
-        f.write(decompressed_text)
-
     end = time.time()
-    print("✅ Decompression complete!")
-    print(f"Decompressed Size: {len(decompressed_text.encode('utf-8'))} bytes")
-    print(f"Time Taken: {end - start:.4f} s")
+    return decompressed_text, len(decompressed_text.encode("utf-8")), end - start

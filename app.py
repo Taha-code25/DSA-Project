@@ -1,3 +1,4 @@
+
 #option 2
 import streamlit as st
 import lzw
@@ -5,7 +6,7 @@ import deflate
 import os
 import matplotlib.pyplot as plt
 import pickle
-
+print(deflate.__file__)
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="Dual-Algorithm Compression Tool", layout="centered", page_icon="📦")
 
